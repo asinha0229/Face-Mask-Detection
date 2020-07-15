@@ -84,8 +84,22 @@ for i in range(0, detections.shape[2]):
 
 		# determine the class label and color we'll use to draw
 		# the bounding box and text
-		label = "Mask" if mask > withoutMask else "No Mask"
-		color = (0, 255, 0) if label == "Mask" else (0, 0, 255)
+
+		#label = "Mask" if mask > withoutMask else "No Mask"
+		#color = (0, 255, 0) if label == "Mask" else (0, 0, 255)
+
+		if mask>withoutMask:
+			if mask>0.90:
+				label = "Mask"
+				color = (0, 255, 0) # green
+			else:
+				label = "Mask not on Properly"
+				color = (0, 220, 220) # yellow
+		else:
+			label = "No Mask"
+			color = (0, 0, 255) # red
+		
+
 
 		# include the probability in the label
 		label = "{}: {:.2f}%".format(label, max(mask, withoutMask) * 100)
