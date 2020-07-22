@@ -107,7 +107,7 @@ while True:
 	# grab the frame from the threaded video stream and resize it
 	# to have a maximum width of 400 pixels
 	frame = vs.read()
-	frame = imutils.resize(frame, width=400)
+	frame = imutils.resize(frame, width=800)
 
 	# detect faces in the frame and determine if they are wearing a
 	# face mask or not
@@ -126,12 +126,16 @@ while True:
 			if mask>0.90:
 				label = "Mask"
 				color = (0, 255, 0) # green
+				img = cv2.imread("emoji_happy.png",-1)
+				
 			else:
 				label = "Mask not on Properly"
 				color = (0, 220, 220) # yellow
+				img = cv2.imread("emoji_middle.png",-1)
 		else:
 			label = "No Mask"
 			color = (0, 0, 255) # red
+			img = cv2.imread("emoji_worried.png",-1)
 
 		# include the probability in the label
 		label = "{}: {:.2f}%".format(label, max(mask, withoutMask) * 100)
@@ -141,9 +145,25 @@ while True:
 		cv2.putText(frame, label, (startX, startY - 10),
 			cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 2)
 		cv2.rectangle(frame, (startX, startY), (endX, endY), color, 2)
-
 	# show the output frame
+		x_offset=y_offset=75
+		#frame[y_offset:y_offset+img.shape[0], x_offset:x_offset+img.shape[1]] = img
+
+
+		y1, y2 = y_offset, y_offset + img.shape[0]
+		x1, x2 = x_offset, x_offset + img.shape[1]
+
+		alpha_s = img[:, :, 3] / 255.0
+		alpha_l = 1.0 - alpha_s
+
+		for c in range(0, 3):
+			frame[y1:y2, x1:x2, c] = (alpha_s * img[:, :, c] +
+									alpha_l * frame[y1:y2, x1:x2, c])
+
+
+
 	cv2.imshow("Frame", frame)
+
 	key = cv2.waitKey(1) & 0xFF
 
 	# if the `q` key was pressed, break from the loop
