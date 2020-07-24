@@ -12,6 +12,11 @@ import imutils
 import time
 import cv2
 import os
+import urllib
+import insightface
+
+FACE_DETECTION_LIKELIHOOD_THRESHOLD = 0.5
+FACE_DETECTION_SCALE = 1 #ESP32:1.0
 
 def detect_and_predict_mask(frame, faceNet, maskNet):
 	# grab the dimensions of the frame and then construct a blob
@@ -23,6 +28,7 @@ def detect_and_predict_mask(frame, faceNet, maskNet):
 	# pass the blob through the network and obtain the face detections
 	faceNet.setInput(blob)
 	detections = faceNet.forward()
+	# bboxes, landmarks = faceNet.detect(blob, threshold=FACE_DETECTION_LIKELIHOOD_THRESHOLD, scale=FACE_DETECTION_SCALE)
 
 	# initialize our list of faces, their corresponding locations,
 	# and the list of predictions from our face mask network
@@ -52,7 +58,7 @@ def detect_and_predict_mask(frame, faceNet, maskNet):
 			# extract the face ROI, convert it from BGR to RGB channel
 			# ordering, resize it to 224x224, and preprocess it
 			face = frame[startY:endY, startX:endX]
-			face = cv2.cvtColor(face, cv2.COLOR_BGR2RGB)
+			#face = cv2.cvtColor(face, cv2.COLOR_BGR2RGB)
 			face = cv2.resize(face, (224, 224))
 			face = img_to_array(face)
 			face = preprocess_input(face)
@@ -88,88 +94,113 @@ args = vars(ap.parse_args())
 
 # load our serialized face detector model from disk
 print("[INFO] loading face detector model...")
+# faceNet = insightface.model_zoo.get_model('retinaface_r50_v1')
 prototxtPath = os.path.sep.join([args["face"], "deploy.prototxt"])
 weightsPath = os.path.sep.join([args["face"],
 	"res10_300x300_ssd_iter_140000.caffemodel"])
 faceNet = cv2.dnn.readNet(prototxtPath, weightsPath)
+# faceNet.prepare(ctx_id=-1, nms=0.4)
+
 
 # load the face mask detector model from disk
 print("[INFO] loading face mask detector model...")
 maskNet = load_model(args["model"])
 
 # initialize the video stream and allow the camera sensor to warm up
+
+bytes=b''
+
 print("[INFO] starting video stream...")
-vs = VideoStream(src=0).start()
-time.sleep(2.0)
+
+#capture=cv2.VideoCapture("http://192.168.1.136:81/stream")
+stream=urllib.request.urlopen('http://192.168.1.136:81/stream')
+print('hi')
+# vs = VideoStream(src=0).start()
+# time.sleep(2.0)
 
 # loop over the frames from the video stream
 while True:
 	# grab the frame from the threaded video stream and resize it
 	# to have a maximum width of 400 pixels
-	frame = vs.read()
-	frame = imutils.resize(frame, width=800)
+	#frame = vs.read()
+	#ret, frame = capture.read()
 
-	# detect faces in the frame and determine if they are wearing a
-	# face mask or not
-	(locs, preds) = detect_and_predict_mask(frame, faceNet, maskNet)
 
-	# loop over the detected face locations and their corresponding
-	# locations
-	for (box, pred) in zip(locs, preds):
-		# unpack the bounding box and predictions
-		(startX, startY, endX, endY) = box
-		(mask, withoutMask) = pred
+	bytes+=stream.read(4096)
+	a = bytes.find(b'\xff\xd8')
+	b = bytes.find(b'\xff\xd9')
 
-		# determine the class label and color we'll use to draw
-		# the bounding box and text
-		if mask>withoutMask:
-			if mask>0.90:
-				label = "Mask"
-				color = (0, 255, 0) # green
-				img = cv2.imread("emoji_happy.png",-1)
-				
+	if a!=-1 and b!=-1:
+		jpg = bytes[a:b+2]
+		bytes= bytes[b+2:]
+		img = cv2.imdecode(np.frombuffer(jpg, dtype=np.uint8),1)
+		# resize the frame, blur it, and convert it to the HSV
+		# color space
+		frame = imutils.resize(img, width=800)
+		# blurred = cv2.GaussianBlur(frame, (11, 11), 0)
+		
+
+		#frame = imutils.resize(frame, width=400)
+		#frame = cv2.resize(frame, (400, 296))
+
+		# detect faces in the frame and determine if they are wearing a
+		# face mask or not
+		(locs, preds) = detect_and_predict_mask(frame, faceNet, maskNet)
+
+		# loop over the detected face locations and their corresponding
+		# locations
+		for (box, pred) in zip(locs, preds):
+			# unpack the bounding box and predictions
+			(startX, startY, endX, endY) = box
+			(mask, withoutMask) = pred
+
+			# determine the class label and color we'll use to draw
+			# the bounding box and text
+			if mask>withoutMask:
+				if mask>0.90:
+					label = "Mask"
+					color = (0, 255, 0) # green
+					img = cv2.imread("emoji_happy.png",-1)
+					
+				else:
+					label = "Mask not on Properly"
+					color = (0, 220, 220) # yellow
+					img = cv2.imread("emoji_middle.png",-1)
 			else:
-				label = "Mask not on Properly"
-				color = (0, 220, 220) # yellow
-				img = cv2.imread("emoji_middle.png",-1)
-		else:
-			label = "No Mask"
-			color = (0, 0, 255) # red
-			img = cv2.imread("emoji_worried.png",-1)
+				label = "No Mask"
+				color = (0, 0, 255) # red
+				img = cv2.imread("emoji_worried.png",-1)
 
-		# include the probability in the label
-		label = "{}: {:.2f}%".format(label, max(mask, withoutMask) * 100)
+			# include the probability in the label
+			label = "{}: {:.2f}%".format(label, max(mask, withoutMask) * 100)
 
-		# display the label and bounding box rectangle on the output
-		# frame
-		cv2.putText(frame, label, (startX, startY - 10),
-			cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 2)
-		cv2.rectangle(frame, (startX, startY), (endX, endY), color, 2)
-	# show the output frame
-		x_offset=y_offset=75
-		#frame[y_offset:y_offset+img.shape[0], x_offset:x_offset+img.shape[1]] = img
+			# display the label and bounding box rectangle on the output
+			# frame
+			cv2.putText(frame, label, (startX, startY - 10),
+				cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 2)
+			cv2.rectangle(frame, (startX, startY), (endX, endY), color, 2)
+
+			x_offset=y_offset=75
 
 
-		y1, y2 = y_offset, y_offset + img.shape[0]
-		x1, x2 = x_offset, x_offset + img.shape[1]
+			y1, y2 = y_offset, y_offset + img.shape[0]
+			x1, x2 = x_offset, x_offset + img.shape[1]
 
-		alpha_s = img[:, :, 3] / 255.0
-		alpha_l = 1.0 - alpha_s
+			alpha_s = img[:, :, 3] / 255.0
+			alpha_l = 1.0 - alpha_s
 
-		for c in range(0, 3):
-			frame[y1:y2, x1:x2, c] = (alpha_s * img[:, :, c] +
-									alpha_l * frame[y1:y2, x1:x2, c])
+			for c in range(0, 3):
+				frame[y1:y2, x1:x2, c] = (alpha_s * img[:, :, c] +
+										alpha_l * frame[y1:y2, x1:x2, c])
 
+		# show the output frame
+		cv2.imshow("Frame", frame)
+		key = cv2.waitKey(1) & 0xFF
 
-
-	cv2.imshow("Frame", frame)
-
-	key = cv2.waitKey(1) & 0xFF
-
-	# if the `q` key was pressed, break from the loop
-	if key == ord("q"):
-		break
+		# if the `q` key was pressed, break from the loop
+		if key == ord("q"):
+			break
 
 # do a bit of cleanup
 cv2.destroyAllWindows()
-vs.stop()
+# vs.stop()
