@@ -16,53 +16,45 @@ import urllib
 import insightface
 
 FACE_DETECTION_LIKELIHOOD_THRESHOLD = 0.5
-FACE_DETECTION_SCALE = 1 #ESP32:1.0
+FACE_DETECTION_SCALE = 1.0 #ESP32:1.0
 
 def detect_and_predict_mask(frame, faceNet, maskNet):
-	# grab the dimensions of the frame and then construct a blob
-	# from it
+	# grab the dimensions of the frame 
 	(h, w) = frame.shape[:2]
-	blob = cv2.dnn.blobFromImage(frame, 1.0, (300,300),
-		(104.0, 177.0, 123.0))
+	# blob = cv2.dnn.blobFromImage(frame, 1.0, (300,300), (104.0, 177.0, 123.0))
 
 	# pass the blob through the network and obtain the face detections
-	bboxes, landmarks = faceNet.detect(blob, threshold=FACE_DETECTION_LIKELIHOOD_THRESHOLD, scale=FACE_DETECTION_SCALE)
+	bboxes, landmarks = faceNet.detect(frame, threshold=FACE_DETECTION_LIKELIHOOD_THRESHOLD, scale=FACE_DETECTION_SCALE)
 
-	# initialize our list of faces, their corresponding locations,
-	# and the list of predictions from our face mask network
+	# initialize our list of faces, their corresponding locations, and the list of predictions from our face mask network
 	faces = []
 	locs = []
 	preds = []
 
 	# loop over the detections
-	for i in range(0, bboxes.shape[2]):
-		# extract the confidence (i.e., probability) associated with
-		# the detection
-		confidence = bboxes[0, 0, i, 2]
+	for i in range(0, bboxes.shape[0]):
+		# extract the confidence (i.e., probability) associated with the detection
+		face = bboxes[i]
+		confidence = face[4]
 
-		# filter out weak bboxes by ensuring the confidence is
-		# greater than the minimum confidence
+		# filter out weak bboxes by ensuring the confidence is greater than the minimum confidence
 		if confidence > args["confidence"]:
-			# compute the (x, y)-coordinates of the bounding box for
-			# the object
-			box = bboxes[0, 0, i, 3:7] * np.array([w, h, w, h])
-			(startX, startY, endX, endY) = box.astype("int")
+			# compute the (x, y)-coordinates of the bounding box for the object
+			# box = bboxes[0, 0, i, 3:7] * np.array([w, h, w, h])
+			(startX, startY, endX, endY) = face[0:4].astype("int") #box.astype("int")
 
-			# ensure the bounding boxes fall within the dimensions of
-			# the frame
+			# ensure the bounding boxes fall within the dimensions of the frame
 			(startX, startY) = (max(0, startX), max(0, startY))
 			(endX, endY) = (min(w - 1, endX), min(h - 1, endY))
 
-			# extract the face ROI, convert it from BGR to RGB channel
-			# ordering, resize it to 224x224, and preprocess it
+			# extract the face ROI, convert it from BGR to RGB channel ordering, resize it to 224x224, and preprocess it
 			face = frame[startY:endY, startX:endX]
-			#face = cv2.cvtColor(face, cv2.COLOR_BGR2RGB)
+			face = cv2.cvtColor(face, cv2.COLOR_BGR2RGB)
 			face = cv2.resize(face, (224, 224))
 			face = img_to_array(face)
 			face = preprocess_input(face)
 
-			# add the face and bounding boxes to their respective
-			# lists
+			# add the face and bounding boxes to their respective lists
 			faces.append(face)
 			locs.append((startX, startY, endX, endY))
 
@@ -111,7 +103,7 @@ while True:
 	# grab the frame from the threaded video stream and resize it
 	# to have a maximum width of 400 pixels
     frame = vs.read()
-    frame = imutils.resize(frame, height=480, width=640)
+    frame = imutils.resize(frame, width=500) #if changing width, must also change offset of face
     
     # detect faces in the frame and determine if they are wearing a face mask or not
     (locs, preds) = detect_and_predict_mask(frame, faceNet, maskNet)
@@ -146,9 +138,10 @@ while True:
         cv2.putText(frame, label, (startX, startY - 10),
             cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 2)
         cv2.rectangle(frame, (startX, startY), (endX, endY), color, 2)
-
-        x_offset=y_offset=75
-
+        
+        # adding the emoji status indicator
+        img = cv2.resize(img,(int(img.shape[1]*0.25),int(img.shape[0]*0.25)))
+        x_offset=y_offset=50
 
         y1, y2 = y_offset, y_offset + img.shape[0]
         x1, x2 = x_offset, x_offset + img.shape[1]
